@@ -7,10 +7,20 @@
 
 #include <Arduino.h>
 
+// tipologie memorie conosciute
+typedef enum {
+  AT28C64,
+  AT28C256,
+  E2764,
+  E27128,
+  E27256,
+  NONE
+} e_rom_type;
+
 //******************************************************************************************************************//
 //* Lettura di un byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte readByte(unsigned int address);
+byte readByte(e_rom_type romtype, unsigned int address);
 
 //******************************************************************************************************************//
 //* Scrittura di un byte all'indirizzo selezionato
@@ -35,7 +45,7 @@ void writePagedEEPROM(unsigned int size, unsigned int pagesize);
 //******************************************************************************************************************//
 //* Lettura della EEPROM
 //******************************************************************************************************************//
-void readEEPROM(unsigned int size);
+void readEEPROM(e_rom_type romtype, unsigned int size);
 
 //******************************************************************************************************************//
 //* Disabilita Software Data Protection

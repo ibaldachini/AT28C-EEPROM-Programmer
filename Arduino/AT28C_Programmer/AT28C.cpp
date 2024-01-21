@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include "Const.h"
 #include "SRHelper.h"
+#include "AT28C.h"
 
 //******************************************************************************************************************//
 //* Imposta il bus dati in INPUT o OUTPUT
@@ -22,9 +23,37 @@ void setDataBusMode(int mode)
 }
 
 //******************************************************************************************************************//
+//* Impostazione indirizzo inbase al tipo di ROM considerando che per le EPROM 27xxx A14 è sul WE delle EEPROM AT28C
+//******************************************************************************************************************//
+void romTypeAddressWrite(e_rom_type romtype, unsigned int value) {
+  // viene indicata la tipologia di eprom invece della dimensione da leggere
+  switch (romtype) {
+    case AT28C64:
+      break;
+    case AT28C256:
+      break;
+    case E2764:
+      value = value + 24576;
+      break;
+    case E27128:
+      value = value + 16384;
+      break;
+    case E27256:
+      if (value < 16384) {
+        value = value + 16384;
+        digitalWrite(EEPROM_WE_PIN, LOW);
+      } else {
+        digitalWrite(EEPROM_WE_PIN, HIGH);
+      }
+      break;
+  }
+  addressWrite(value);
+}
+
+//******************************************************************************************************************//
 //* Lettura di un byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte readByte(unsigned int address) {
+byte readByte(e_rom_type romtype, unsigned int address) {
 
   // Imposta il bus dati in input
   setDataBusMode(INPUT);
@@ -35,7 +64,7 @@ byte readByte(unsigned int address) {
   delayMicroseconds(1);
 
   // Imposta indirizzo
-  addressWrite(address);
+  romTypeAddressWrite(romtype, address);
   //Serial.println("address=" + (String)addr);
 
   digitalWrite(EEPROM_CE_PIN, LOW);
@@ -160,11 +189,11 @@ byte waitAndCheckWrite(byte value)
 //******************************************************************************************************************//
 //* Lettura della EEPROM
 //******************************************************************************************************************//
-void readEEPROM(unsigned int size) {
+void readEEPROM(e_rom_type romtype, unsigned int size) {
   unsigned int addr = 0;
 
   for (int i = 0; i < size; i++) {
-    byte bval = readByte(addr + i);
+    byte bval = readByte(romtype, addr + i);
     Serial.write(&bval, 1);
   }
 }
@@ -213,7 +242,7 @@ void writePagedEEPROM(unsigned int size, unsigned int pagesize)
     // feedback al programmatore dei bytes letti da EPROM
     idx = 0;
     while (idx < PAGE_SIZE) {
-      byte val = readByte(address + idx++);
+      byte val = readByte(AT28C256, address + idx++);
       Serial.write(&val, 1);
     }
     address += PAGE_SIZE;

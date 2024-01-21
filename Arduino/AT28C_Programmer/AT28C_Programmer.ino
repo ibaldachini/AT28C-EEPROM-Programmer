@@ -91,7 +91,7 @@ void ParseComands(String s) {
       // Serial.println("PARAM: " + params[0]);
       if (params[0] == "?") {
         // Versione del firmware incrementale
-        Serial.println("+VERSION=0.003");
+        Serial.println("+VERSION=0.004");
       }
     }
     //**********************************************
@@ -101,8 +101,15 @@ void ParseComands(String s) {
       GetComandParams(s, params);
       //Serial.println("PARAM: " + params[0]);
       if (params[0] != "") {
-        byte b = readByte(params[0].toInt());
-        Serial.println("+READBYTE=" + (String)b);
+        if (params[1] != "") {
+          unsigned int romtype = params[0].toInt();
+          unsigned int address = params[1].toInt();
+          byte b = readByte(romtype, address);
+          Serial.println("+READBYTE=" + (String)b);
+        } else {
+          byte b = readByte(AT28C256, params[0].toInt());
+          Serial.println("+READBYTE=" + (String)b);
+        }
       }
     }
     //**********************************************
@@ -124,8 +131,16 @@ void ParseComands(String s) {
       GetComandParams(s, params);
       // Serial.println("PARAM: " + params[0]);
       if (params[0] != "") {
-        readEEPROM(params[0].toInt());
-        //Serial.println("+++");
+        if (params[1] != "") {
+          unsigned int romtype = params[0].toInt();
+          unsigned int size = params[1].toInt();
+          readEEPROM(romtype, size);
+        } else {
+          unsigned int size = params[0].toInt();
+          unsigned int romtype = size == 8192 ? AT28C64 : AT28C256;
+          readEEPROM(romtype, size);
+          //Serial.println("+++");
+        }
       }
     }
     //**********************************************

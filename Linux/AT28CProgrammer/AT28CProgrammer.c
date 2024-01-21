@@ -14,9 +14,15 @@
 typedef enum {
   AT28C64,
   AT28C256,
+  E2764,
+  E27128,
+  E27256,
   NONE
 } e_rom_type;
 
+
+// restituisce la dimensione della memoria in bytes
+int getTotalBytes(e_rom_type romtype);
 
 // invia il comando di richiesta della versione del firmware
 int requestFirmware(int fd);
@@ -46,7 +52,10 @@ int setupSDP(int fd, bool enable, long msec);
 int requestWriteByte(int fd, int address, unsigned char val, long msecforbyte);
 
 // legge al programmatore la locazione di memoria da leggere
-int requestReadByte(int fd, int address, long msecforbyte);
+int requestReadByte(int fd, e_rom_type romtype, int address, long msecforbyte);
+
+// legge la risposta dal programmatore con il contenuto della memoria ed esegueil blank check, attende la risposta per max msec millisecondi 
+int blankCheck(int fd, e_rom_type romtype, long msec);
 
 // applicazione principale
 int main (int argc, char **argv) {
@@ -90,6 +99,9 @@ int main (int argc, char **argv) {
       case 't':
         if (strcmp("AT28C64", optarg) == 0) romtype = AT28C64;
         if (strcmp("AT28C256", optarg) == 0) romtype = AT28C256;
+        if (strcmp("2764", optarg) == 0) romtype = E2764;
+        if (strcmp("27128", optarg) == 0) romtype = E27128;
+        if (strcmp("27256", optarg) == 0) romtype = E27256;
         if (romtype == NONE) {
           printf("unknown romtype\n");
         }
@@ -122,6 +134,9 @@ int main (int argc, char **argv) {
         // opzione per la disabilitazione del software data protection
         } else if (optarg[0] == 'd') {
           operation = 'd';
+        // opzione per il blank check
+        } else if (optarg[0] == 'b') {
+          operation = 'b';
         }
         else {
           printf("unknown operation\n");
@@ -152,12 +167,9 @@ int main (int argc, char **argv) {
     }
   }
 
-  if (address >= 8192 && romtype == AT28C64) {
-    printf("wrong address\n");
-    address = -1; // print help if needed
-  }
+  int totalbytes = getTotalBytes(romtype);
 
-  if (address >= 32768 && romtype == AT28C256) {
+  if (address >= totalbytes) {
     printf("wrong address\n");
     address = -1; // print help if needed
   }
@@ -169,11 +181,14 @@ int main (int argc, char **argv) {
       (filename == NULL && (operation == 'w' || operation == 'v') && singlebyte == false) ||
       (address == -1 && (operation == 'w' || operation == 'r') && singlebyte == true) ||
       (val == -1 && operation == 'w' && singlebyte == true)) {
-    printf("AT28CProgrammer V.1.01\n");
+    printf("AT28CProgrammer V.1.1\n");
     printf("use: AT28CProgrammer -d <device> -t <romtype> -o <operation> [-a <address>] [-b <byte>] [-f <filename>]\n");
     printf("\t-d: serial port\n");
     printf("\t-t AT28C64: eeprom type AT28C64\n");
     printf("\t-t AT28C256: eeprom type AT28C256\n");
+    printf("\t-t 2764: eprom type 2764\n");
+    printf("\t-t 27128: eprom type 27128\n");
+    printf("\t-t 27256: eprom type 27256\n");
     printf("\t-o r: set to read eprom (save to file or dump to screen if no file selected)\n");
     printf("\t-o rb: set to read byte (needed -a parameter)\n");
     printf("\t-o w: set to write eprom\n");
@@ -182,13 +197,15 @@ int main (int argc, char **argv) {
     printf("\t-o v: set to verify eprom\n");
     printf("\t-o e: set to enable software data protection\n");
     printf("\t-o d: set to disable software data protection\n");
+    printf("\t-o b: blank check\n");
     printf("\t-a: address to read or write for single byte mode (decimal or preceded with x for hex)\n");
     printf("\t-b: byte to write for single byte mode (decimal or preceded with x for hex)\n");
     printf("\t-f: file name to read or write\n");
-    printf("read  example:      AT28CProgrammer -d /dev/ttyUSB0 -t AT28C256 -o r -f /tmp/dump.bin\n");
-    printf("write example:      AT28CProgrammer -d /dev/ttyUSB0 -t AT28C64 -o w -f /tmp/towrite.bin\n");
-    printf("read byte example:  AT28CProgrammer -d /dev/ttyUSB0 -t AT28C64 -o rb -a 4096\n");
-    printf("read byte example:  AT28CProgrammer -d /dev/ttyUSB0 -t AT28C64 -o rb -a x1000\n");
+    printf("read  example:        AT28CProgrammer -d /dev/ttyUSB0 -t AT28C256 -o r -f /tmp/dump.bin\n");
+    printf("write example:        AT28CProgrammer -d /dev/ttyUSB0 -t AT28C64 -o w -f /tmp/towrite.bin\n");
+    printf("read byte example:    AT28CProgrammer -d /dev/ttyUSB0 -t AT28C64 -o rb -a 4096\n");
+    printf("read byte example:    AT28CProgrammer -d /dev/ttyUSB0 -t AT28C64 -o rb -a x1000\n");
+    printf("blank check example:  AT28CProgrammer -d /dev/ttyUSB0 -t 2764 -o b\n");
     return -1;
   }
 
@@ -197,6 +214,12 @@ int main (int argc, char **argv) {
     printf("selected AT28C64\n");
   } else if (romtype == AT28C256) {
     printf("selected AT28C256\n");
+  } else if (romtype == E2764) {
+    printf("selected 2764\n");
+  } else if (romtype == E27128) {
+    printf("selected 27128\n");
+  } else if (romtype == E27256) {
+    printf("selected 27256\n");
   }
 
   // apre la comunicazione con il programmatore tramite la porta seriale
@@ -254,7 +277,8 @@ int main (int argc, char **argv) {
   }
 
   // attende la risposta per un massimo di 100 ms (se il dispositivo non è stato resettato nell'apertura della comunicazione risponderà qui)
-  if (readAnswer(fd, NULL, 100) == -1) {
+  char fwbuf[64];
+  if (readAnswer(fd, fwbuf, 100) == -1) {
     // non ha ricevuto la risposta alla versione firmware
     // attende l'eventuale intestazione inviata dal programmatore per massimo 1.5 secondi
     if (readAnswer(fd, NULL, 1500) == -1) {
@@ -271,11 +295,28 @@ int main (int argc, char **argv) {
     }
 
     // attende la risposta contentente la versione firmware per un massimo di 100 ms
-    if (readAnswer(fd, NULL, 100) == -1) {
+    if (readAnswer(fd, fwbuf, 100) == -1) {
       close(fd);
       printf("error reading firmware version\n");
       return -1;
     }
+  }
+  // fwbuf: +VERSION=0.004
+  if (memcmp(fwbuf, "+VERSION=", 9) != 0) {
+    close(fd);
+    printf("error reading firmware version\n");
+    return -1;
+  }
+  printf("%s\n", fwbuf);
+  fwbuf[10] = 0;
+  fwbuf[14] = 0;
+  unsigned int maj = atoi(fwbuf + 9);
+  unsigned int min = atoi(fwbuf + 11);
+  unsigned int fwver = maj * 1000 + min;
+  if (fwver < 4) {
+    close(fd);
+    printf("please update firmware on AT28C EEPROM PROGRAMMER\n");
+    return -1;
   }
 
   // verifica se richiesta verifica della memoria
@@ -338,7 +379,7 @@ int main (int argc, char **argv) {
   else if (operation == 'r') {
     if (singlebyte) {
       // invia il comando di richiesta scrittura della byte
-      if (requestReadByte(fd, address, 100) == -1) {
+      if (requestReadByte(fd, romtype, address, 100) == -1) {
         close(fd);
         printf("error request read byte\n");
         return -1;
@@ -389,12 +430,41 @@ int main (int argc, char **argv) {
       return -1;
     }
   }
+  // verifica se richiesto blank check
+  else if (operation == 'b') {
+    // invia il comando di richiesta lettura della memoria selezionata
+    if (requestRead(fd, romtype) == -1) {
+      close(fd);
+      printf("error request read eprom\n");
+      return -1;
+    }
+    if (blankCheck(fd, romtype, 100) == -1) {
+      close(fd);
+      printf("blank check error\n");
+      return -1;
+    }
+  }
 
   close(fd);
 
   fflush(stdout);
 
   return 0;
+}
+
+// restituisce la dimensione della memoria in bytes
+int getTotalBytes(e_rom_type romtype) {
+  int totalbytes = 0;
+  if (romtype == AT28C64 || romtype == E2764) {
+    totalbytes = 8192;
+  }
+  if (romtype == E27128) {
+    totalbytes = 16384;
+  }
+  if (romtype == AT28C256 || romtype == E27256) {
+    totalbytes = 32768;
+  }
+  return totalbytes;
 }
 
 // invia il comando di richiesta della versione del firmware
@@ -407,12 +477,13 @@ int requestFirmware(int fd) {
 int requestRead(int fd, e_rom_type romtype) {
   tcflush(fd, TCIOFLUSH);
 
-  const char* cmdReadAT28C64 = "READEEPROM=8192\r";
-  const char* cmdReadAT28C256 = "READEEPROM=32768\r";
-  if (romtype == AT28C64) {
-    return write(fd, cmdReadAT28C64, strlen(cmdReadAT28C64));
-  } else if (romtype == AT28C256) {
-    return write(fd, cmdReadAT28C256, strlen(cmdReadAT28C256));
+  int totalbytes = getTotalBytes(romtype);
+
+  const char* cmdRead = "READEEPROM=%d,%d\r";
+  char buf[64];
+  sprintf(buf, cmdRead, romtype, totalbytes);
+  if (totalbytes != 0) {
+    return write(fd, buf, strlen(buf));
   }
   return -1;
 }
@@ -421,22 +492,17 @@ int requestRead(int fd, e_rom_type romtype) {
 int requestWrite(int fd, e_rom_type romtype, bool paged) {
   tcflush(fd, TCIOFLUSH);
 
-  if (romtype == AT28C64) {
-    if (paged) {
-      const char* cmdWrite = "WRITEEEPROM=8192,64\r";
-      return write(fd, cmdWrite, strlen(cmdWrite));
-    } else {
-      const char* cmdWrite = "WRITEEEPROM=8192\r";
-      return write(fd, cmdWrite, strlen(cmdWrite));
-    }
-  } else if (romtype == AT28C256) {
-    if (paged) {
-      const char* cmdWrite = "WRITEEEPROM=32768,64\r";
-      return write(fd, cmdWrite, strlen(cmdWrite));
-    } else {
-      const char* cmdWrite = "WRITEEEPROM=32768\r";
-      return write(fd, cmdWrite, strlen(cmdWrite));
-    }
+  int totalbytes = getTotalBytes(romtype);
+
+  const char* cmdWrite = "WRITEEEPROM=%d";
+  char buf[64];
+  sprintf(buf, cmdWrite, totalbytes);
+  if (paged) {
+    strcat(buf, ",64");
+  }
+  strcat(buf, "\r");
+  if (totalbytes != 0) {
+    return write(fd, buf, strlen(buf));
   }
   return -1;
 }
@@ -497,15 +563,9 @@ int readAnswer(int fd, char* buffer, long msec) {
 // legge la risposta dal programmatore con il contenuto della memoria e lo salva sul file indicato, attende la risposta per max msec millisecondi 
 int readEprom(int fd, e_rom_type romtype, char* filename, long msec) {
   int writefd = -1;
-  int totalbytes = 0;
   int readed = 0;
   int lastperc = -1;
-  if (romtype == AT28C64) {
-    totalbytes = 8192;
-  }
-  if (romtype == AT28C256) {
-    totalbytes = 32768;
-  }
+  int totalbytes = getTotalBytes(romtype);
   if (filename != NULL) {
     unlink(filename);
     writefd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -583,16 +643,10 @@ int readEprom(int fd, e_rom_type romtype, char* filename, long msec) {
 
 // legge la risposta dal programmatore con il contenuto della memoria e lo verifica con il contenuto del file indicato, attende la risposta per max msec millisecondi 
 int verifyEprom(int fd, e_rom_type romtype, char* filename, long msec) {
-  int totalbytes = 0;
   int readed = 0;
   int errors = 0;
   int lastperc = -1;
-  if (romtype == AT28C64) {
-    totalbytes = 8192;
-  }
-  if (romtype == AT28C256) {
-    totalbytes = 32768;
-  }
+  int totalbytes = getTotalBytes(romtype);
   int readfd = open(filename, O_RDONLY);
   if (readfd == -1) {
     printf("error opening input file\n");
@@ -663,15 +717,9 @@ int verifyEprom(int fd, e_rom_type romtype, char* filename, long msec) {
 
 // invia al prorammatore i dati da scrivere leggendoli dal file indicato, per ogni byte attende al massimo msecforbyte millisecondi
 int writeEprom(int fd, e_rom_type romtype, bool paged, char* filename, long msecforbyte) {
-  size_t totalbytes = 0;
   size_t written = 0;
   int lastperc = -1;
-  if (romtype == AT28C64) {
-    totalbytes = 8192;
-  }
-  if (romtype == AT28C256) {
-    totalbytes = 32768;
-  }
+  int totalbytes = getTotalBytes(romtype);
   int readfd = open(filename, O_RDONLY);
   if (readfd == -1) {
     printf("error opening input file\n");
@@ -776,12 +824,78 @@ int requestWriteByte(int fd, int address, unsigned char val, long msecforbyte) {
 }
 
 // legge al programmatore la locazione di memoria da leggere
-int requestReadByte(int fd, int address, long msecforbyte) {
+int requestReadByte(int fd, e_rom_type romtype, int address, long msecforbyte) {
   tcflush(fd, TCIOFLUSH);
 
-  const char* cmdReadByte = "READBYTE=%d\r";
-  char buff[32];
-  sprintf(buff, cmdReadByte, address);
+  const char* cmdReadByte = "READBYTE=%d,%d\r";
+  char buff[64];
+  sprintf(buff, cmdReadByte, romtype, address);
   printf("read byte from address %u [x%04X]\n", (unsigned int)address, (unsigned int)address);
   return write(fd, buff, strlen(buff));
+}
+
+// legge la risposta dal programmatore con il contenuto della memoria ed esegueil blank check, attende la risposta per max msec millisecondi 
+int blankCheck(int fd, e_rom_type romtype, long msec) {
+  int readed = 0;
+  int errors = 0;
+  int lastperc = -1;
+  int totalbytes = getTotalBytes(romtype);
+
+  while (true) {
+    fd_set rfds;
+    struct timeval tv;
+    int retval;
+
+    FD_ZERO(&rfds);
+    FD_SET(fd, &rfds);
+
+    tv.tv_sec = (msec * 1000) / 1000000;
+    tv.tv_usec = (msec * 1000) % 1000000;
+
+    retval = select(fd + 1, &rfds, NULL, NULL, &tv);
+    if (retval == -1) {
+      printf("error select\n");
+      return -1;
+    } else if (retval > 0) {
+      unsigned char c;
+      read(fd, &c, 1);
+      if (c != 0xFF) {
+          printf("\n-> address: 0x%04X, eprom byte: 0x%02X, blank check failed\n", (unsigned int)readed, (unsigned char)c);
+          errors++;
+      }
+      if (errors >= 3) {
+          printf("\n-> print maximum three errors\r");
+          break;
+      }
+      readed++;
+      int perc = readed * 100 / totalbytes;
+      if (perc != lastperc) {
+        printf("<- verify percent: %d%%\r", perc);
+        fflush(stdout);
+        lastperc = perc;
+      }
+    } else {
+      // timeout attesa risposta
+      break;
+    }
+  }
+
+  if (readed) {
+    printf("\n");
+  }
+
+  // visualizza il numero di bytes ricevuti
+  printf("checked: %d\n", readed);
+
+  // verifica se ha ricevuto il numero di bytes attesi
+  if (readed != totalbytes) {
+    return -1;
+  }
+
+  if (errors) {
+    printf("%d errors found\n", errors);
+    return -1;
+  }
+
+  return 0;
 }
