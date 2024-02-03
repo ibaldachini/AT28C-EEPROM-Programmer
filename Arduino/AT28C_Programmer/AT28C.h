@@ -25,22 +25,22 @@ byte readByte(e_rom_type romtype, unsigned int address);
 //******************************************************************************************************************//
 //* Scrittura di un byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte writeByte(unsigned int address, byte value);
+byte writeByte(e_rom_type romtype, unsigned int address, byte value);
 
 //******************************************************************************************************************//
 //* Attende il termine della scrittura di un byte e ne verifica la corretta valorizzazione
 //******************************************************************************************************************//
-byte waitAndCheckWrite(byte value);
+byte waitAndCheckWrite(e_rom_type romtype, byte value);
 
 //******************************************************************************************************************//
 //* Scrittura della EEPROM
 //******************************************************************************************************************//
-void writeEEPROM(unsigned int size);
+void writeEEPROM(e_rom_type romtype, unsigned int size);
 
 //******************************************************************************************************************//
 //* Scrittura della EEPROM in modo paginato
 //******************************************************************************************************************//
-void writePagedEEPROM(unsigned int size, unsigned int pagesize);
+void writePagedEEPROM(e_rom_type romtype, unsigned int size, unsigned int pagesize);
 
 //******************************************************************************************************************//
 //* Lettura della EEPROM

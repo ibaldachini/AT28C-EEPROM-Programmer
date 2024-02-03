@@ -19,6 +19,8 @@ void setup() {
   pinMode(SN_SRCLK_PIN, OUTPUT);
   pinMode(SN_SER_PIN, OUTPUT);
   pinMode(SN_RCLK_PIN, OUTPUT);
+  digitalWrite(VPP_PIN, LOW);
+  pinMode(VPP_PIN, OUTPUT);
 
   // Inizializza Ouput Pins della EEPROM
   pinMode(EEPROM_WE_PIN, OUTPUT);
@@ -119,9 +121,15 @@ void ParseComands(String s) {
       GetComandParams(s, params);
       //Serial.println("PARAM: " + params[0] + "," + params[1]);
       if (params[0] != "") {
-        byte b = writeByte(params[0].toInt(), params[1].toInt());
-        byte wb = waitAndCheckWrite(b);
-        Serial.println("+WRITEBYTE=" + (String)wb);
+        if (params[2] != "") {
+          byte b = writeByte(params[0].toInt(), params[1].toInt(), params[2].toInt());
+          byte wb = waitAndCheckWrite(params[0].toInt(), b);
+          Serial.println("+WRITEBYTE=" + (String)wb);
+        } else {
+          byte b = writeByte(AT28C256, params[0].toInt(), params[1].toInt());
+          byte wb = waitAndCheckWrite(AT28C256, b);
+          Serial.println("+WRITEBYTE=" + (String)wb);
+        }
       }
     }
     //**********************************************
@@ -151,9 +159,18 @@ void ParseComands(String s) {
       // Serial.println("PARAM: " + params[0]);
       if (params[0] != "") {
         if (params[1] != "") {
-          writePagedEEPROM(params[0].toInt(), params[1].toInt());
+          int p1 = params[0].toInt();
+          int p2 = params[1].toInt();
+          if (p2 <= 64) {
+            unsigned int romtype = p1 == 8192 ? AT28C64 : AT28C256;
+            writePagedEEPROM(romtype, p1, p2);
+          } else {
+            writeEEPROM(p1, p2);
+          }
         } else {
-          writeEEPROM(params[0].toInt());
+          int p1 = params[0].toInt();
+          unsigned int romtype = p1 == 8192 ? AT28C64 : AT28C256;
+          writeEEPROM(romtype, p1);
         }
         //Serial.println("+++");
       }

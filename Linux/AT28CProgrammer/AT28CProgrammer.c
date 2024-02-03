@@ -49,7 +49,7 @@ int writeEprom(int fd, e_rom_type romtype, bool paged, char* filename, long msec
 int setupSDP(int fd, bool enable, long msec);
 
 // invia al programmatore la locazione di memoria e il byte da scrivere
-int requestWriteByte(int fd, int address, unsigned char val, long msecforbyte);
+int requestWriteByte(int fd, e_rom_type romtype, int address, unsigned char val, long msecforbyte);
 
 // legge al programmatore la locazione di memoria da leggere
 int requestReadByte(int fd, e_rom_type romtype, int address, long msecforbyte);
@@ -338,7 +338,7 @@ int main (int argc, char **argv) {
   else if (operation == 'w') {
     if (singlebyte) {
       // invia il comando di richiesta scrittura della byte
-      if (requestWriteByte(fd, address, val, 100) == -1) {
+      if (requestWriteByte(fd, romtype, address, val, 100) == -1) {
         close(fd);
         printf("error request write byte\n");
         return -1;
@@ -494,9 +494,9 @@ int requestWrite(int fd, e_rom_type romtype, bool paged) {
 
   int totalbytes = getTotalBytes(romtype);
 
-  const char* cmdWrite = "WRITEEEPROM=%d";
+  const char* cmdWrite = "WRITEEEPROM=%d,%d";
   char buf[64];
-  sprintf(buf, cmdWrite, totalbytes);
+  sprintf(buf, cmdWrite, romtype, totalbytes);
   if (paged) {
     strcat(buf, ",64");
   }
@@ -813,12 +813,12 @@ int setupSDP(int fd, bool enable, long msec) {
 }
 
 // invia al programmatore la locazione di memoria e il byte da scrivere
-int requestWriteByte(int fd, int address, unsigned char val, long msecforbyte) {
+int requestWriteByte(int fd, e_rom_type romtype, int address, unsigned char val, long msecforbyte) {
   tcflush(fd, TCIOFLUSH);
 
-  const char* cmdWriteByte = "WRITEBYTE=%d,%d\r";
-  char buff[32];
-  sprintf(buff, cmdWriteByte, address, val);
+  const char* cmdWriteByte = "WRITEBYTE=%d,%d,%d\r";
+  char buff[64];
+  sprintf(buff, cmdWriteByte, romtype, address, val);
   printf("write byte %u [x%02X] at address %u [x%04X]\n", (unsigned char)val, (unsigned char)val, (unsigned int)address, (unsigned int)address);
   return write(fd, buff, strlen(buff));
 }
