@@ -45,7 +45,7 @@ void shiftOutFast(byte data) {
   }
 }
 
-void addressWrite(unsigned int value) {
+void addressWrite(unsigned long value) {
   byte b1 = 0;
   byte b2 = 0;
 

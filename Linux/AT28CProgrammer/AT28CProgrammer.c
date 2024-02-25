@@ -17,6 +17,7 @@ typedef enum {
   E2764,
   E27128,
   E27256,
+  E27512,
   NONE
 } e_rom_type;
 
@@ -49,7 +50,7 @@ int writeEprom(int fd, e_rom_type romtype, bool paged, char* filename, long msec
 int setupSDP(int fd, bool enable, long msec);
 
 // invia al programmatore la locazione di memoria e il byte da scrivere
-int requestWriteByte(int fd, int address, unsigned char val, long msecforbyte);
+int requestWriteByte(int fd, e_rom_type romtype, int address, unsigned char val, long msecforbyte);
 
 // legge al programmatore la locazione di memoria da leggere
 int requestReadByte(int fd, e_rom_type romtype, int address, long msecforbyte);
@@ -102,6 +103,7 @@ int main (int argc, char **argv) {
         if (strcmp("2764", optarg) == 0) romtype = E2764;
         if (strcmp("27128", optarg) == 0) romtype = E27128;
         if (strcmp("27256", optarg) == 0) romtype = E27256;
+        if (strcmp("27512", optarg) == 0) romtype = E27512;
         if (romtype == NONE) {
           printf("unknown romtype\n");
         }
@@ -189,6 +191,7 @@ int main (int argc, char **argv) {
     printf("\t-t 2764: eprom type 2764\n");
     printf("\t-t 27128: eprom type 27128\n");
     printf("\t-t 27256: eprom type 27256\n");
+    printf("\t-t 27512: eprom type 27512\n");
     printf("\t-o r: set to read eprom (save to file or dump to screen if no file selected)\n");
     printf("\t-o rb: set to read byte (needed -a parameter)\n");
     printf("\t-o w: set to write eprom\n");
@@ -220,6 +223,8 @@ int main (int argc, char **argv) {
     printf("selected 27128\n");
   } else if (romtype == E27256) {
     printf("selected 27256\n");
+  } else if (romtype == E27512) {
+    printf("selected 27512\n");
   }
 
   // apre la comunicazione con il programmatore tramite la porta seriale
@@ -338,7 +343,7 @@ int main (int argc, char **argv) {
   else if (operation == 'w') {
     if (singlebyte) {
       // invia il comando di richiesta scrittura della byte
-      if (requestWriteByte(fd, address, val, 100) == -1) {
+      if (requestWriteByte(fd, romtype, address, val, 100) == -1) {
         close(fd);
         printf("error request write byte\n");
         return -1;
@@ -464,6 +469,9 @@ int getTotalBytes(e_rom_type romtype) {
   if (romtype == AT28C256 || romtype == E27256) {
     totalbytes = 32768;
   }
+  if (romtype == E27512) {
+    totalbytes = 65536;
+  }
   return totalbytes;
 }
 
@@ -494,9 +502,9 @@ int requestWrite(int fd, e_rom_type romtype, bool paged) {
 
   int totalbytes = getTotalBytes(romtype);
 
-  const char* cmdWrite = "WRITEEEPROM=%d";
+  const char* cmdWrite = "WRITEEEPROM=%d,%d";
   char buf[64];
-  sprintf(buf, cmdWrite, totalbytes);
+  sprintf(buf, cmdWrite, romtype, totalbytes);
   if (paged) {
     strcat(buf, ",64");
   }
@@ -813,12 +821,12 @@ int setupSDP(int fd, bool enable, long msec) {
 }
 
 // invia al programmatore la locazione di memoria e il byte da scrivere
-int requestWriteByte(int fd, int address, unsigned char val, long msecforbyte) {
+int requestWriteByte(int fd, e_rom_type romtype, int address, unsigned char val, long msecforbyte) {
   tcflush(fd, TCIOFLUSH);
 
-  const char* cmdWriteByte = "WRITEBYTE=%d,%d\r";
-  char buff[32];
-  sprintf(buff, cmdWriteByte, address, val);
+  const char* cmdWriteByte = "WRITEBYTE=%d,%d,%d\r";
+  char buff[64];
+  sprintf(buff, cmdWriteByte, romtype, address, val);
   printf("write byte %u [x%02X] at address %u [x%04X]\n", (unsigned char)val, (unsigned char)val, (unsigned int)address, (unsigned int)address);
   return write(fd, buff, strlen(buff));
 }

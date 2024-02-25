@@ -25,7 +25,7 @@ void setDataBusMode(int mode)
 //******************************************************************************************************************//
 //* Impostazione indirizzo inbase al tipo di ROM considerando che per le EPROM 27xxx A14 è sul WE delle EEPROM AT28C
 //******************************************************************************************************************//
-void romTypeAddressWrite(e_rom_type romtype, unsigned int value) {
+void romTypeAddressWrite(e_rom_type romtype, unsigned long value) {
   // viene indicata la tipologia di eprom invece della dimensione da leggere
   switch (romtype) {
     case AT28C64:
@@ -33,17 +33,39 @@ void romTypeAddressWrite(e_rom_type romtype, unsigned int value) {
     case AT28C256:
       break;
     case E2764:
-      value = value + 24576;
+      // A14 su VPP del 2764, mantiene livello logico alto
+      // A13 su NC del 2764
+      value = value + 0x6000;
       break;
     case E27128:
-      value = value + 16384;
+      // A14 su VPP del 27128, mantiene livello logico alto
+      value = value + 0x4000;
       break;
     case E27256:
-      if (value < 16384) {
-        value = value + 16384;
+      if (value < 0x4000) {
+        // A14 su VPP del 27128, mantiene livello logico alto
+        value = value + 0x4000;
+        // WE di AT28xx su A14 di 27xx
         digitalWrite(EEPROM_WE_PIN, LOW);
       } else {
+        // WE di AT28xx su A14 di 27xx
         digitalWrite(EEPROM_WE_PIN, HIGH);
+      }
+      break;
+    case E27512:
+      if (value < 0x4000 || (value >= 0x8000 && value < 0xC000)) {
+        // WE di AT28xx su A14 di 27xx
+        digitalWrite(EEPROM_WE_PIN, LOW);
+      } else {
+        // WE di AT28xx su A14 di 27xx
+        digitalWrite(EEPROM_WE_PIN, HIGH);
+      }
+      if (value >= 0x4000 && value < 0x8000) {
+        // A14 su A15 del 27512
+        value += 0x4000;
+      } else if (value >= 0x8000 && value < 0xC000) {
+        // A14 su A15 del 27512
+        value -= 0x4000;
       }
       break;
   }
@@ -53,7 +75,7 @@ void romTypeAddressWrite(e_rom_type romtype, unsigned int value) {
 //******************************************************************************************************************//
 //* Lettura di un byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte readByte(e_rom_type romtype, unsigned int address) {
+byte readByte(e_rom_type romtype, unsigned long address) {
 
   // Imposta il bus dati in input
   setDataBusMode(INPUT);
@@ -92,7 +114,7 @@ byte readByte(e_rom_type romtype, unsigned int address) {
 //******************************************************************************************************************//
 //* Scrittura di un byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte writeByte(unsigned int address, byte value)
+byte writeByte(e_rom_type romtype, unsigned long address, byte value)
 {
   digitalWrite(EEPROM_CE_PIN, HIGH);
   digitalWrite(EEPROM_OE_PIN, HIGH);
@@ -102,7 +124,7 @@ byte writeByte(unsigned int address, byte value)
   setDataBusMode(OUTPUT);
 
   // Imposta indirizzo
-  addressWrite(address);
+  romTypeAddressWrite(romtype, address);
 
   // Scrittura pins D2/D9 (Bus Dati)
   for (int i = 0; i < 8; i++)
@@ -114,11 +136,22 @@ byte writeByte(unsigned int address, byte value)
   digitalWrite(EEPROM_CE_PIN, LOW);
   delayMicroseconds(1);
 
-  digitalWrite(EEPROM_WE_PIN, LOW);
-  delayMicroseconds(1);
+  if (romtype != E27256) {
+    // on 27256 pin 27 WE is not P but A14
+    digitalWrite(EEPROM_WE_PIN, LOW);
+    delayMicroseconds(1);
+  }
 
-  digitalWrite(EEPROM_WE_PIN, HIGH);
-  delayMicroseconds(1);
+  if (romtype == E2764 || romtype == E27128 || romtype == E27256) {
+    // EPROM 1 ms program pulse
+    delay(1);
+  }
+
+  if (romtype != E27256) {
+    // on 27256 pin 27 WE is not P but A14
+    digitalWrite(EEPROM_WE_PIN, HIGH);
+    delayMicroseconds(1);
+  }
 
   digitalWrite(EEPROM_CE_PIN, HIGH);
   delayMicroseconds(1);
@@ -129,7 +162,7 @@ byte writeByte(unsigned int address, byte value)
 //******************************************************************************************************************//
 //* Scrittura di una pagina di 64 byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte writePage(unsigned int address, byte* page, unsigned int size)
+byte writePage(e_rom_type romtype, unsigned long address, byte* page, unsigned int size)
 {
   digitalWrite(EEPROM_CE_PIN, HIGH);
   digitalWrite(EEPROM_OE_PIN, HIGH);
@@ -140,7 +173,7 @@ byte writePage(unsigned int address, byte* page, unsigned int size)
 
   byte value; // valore da scrivere, ultimo valore scritto
   for (unsigned int idx = 0; idx < size; idx++) {
-    value = writeByte(address + idx, page[idx]);
+    value = writeByte(romtype, address + idx, page[idx]);
   }
 
   return value;
@@ -149,13 +182,15 @@ byte writePage(unsigned int address, byte* page, unsigned int size)
 //******************************************************************************************************************//
 //* Attende il termine della scrittura di un byte e ne verifica la corretta valorizzazione
 //******************************************************************************************************************//
-byte waitAndCheckWrite(byte value)
+byte waitAndCheckWrite(e_rom_type romtype, byte value)
 {
   // Imposta il bus dati in input
   setDataBusMode(INPUT);
 
-  digitalWrite(EEPROM_CE_PIN, LOW);
-  delayMicroseconds(1);
+  if (romtype == AT28C64 || romtype == AT28C256) {
+    digitalWrite(EEPROM_CE_PIN, LOW);
+    delayMicroseconds(1);
+  }
 
   digitalWrite(EEPROM_OE_PIN, LOW);
   delayMicroseconds(1);
@@ -189,7 +224,7 @@ byte waitAndCheckWrite(byte value)
 //******************************************************************************************************************//
 //* Lettura della EEPROM
 //******************************************************************************************************************//
-void readEEPROM(e_rom_type romtype, unsigned int size) {
+void readEEPROM(e_rom_type romtype, unsigned long size) {
   unsigned int addr = 0;
 
   for (int i = 0; i < size; i++) {
@@ -201,9 +236,9 @@ void readEEPROM(e_rom_type romtype, unsigned int size) {
 //******************************************************************************************************************//
 //* Scrittura della EEPROM
 //******************************************************************************************************************//
-void writeEEPROM(unsigned int size)
+void writeEEPROM(e_rom_type romtype, unsigned long size)
 {
-  unsigned int address = 0;  
+  unsigned int address = 0;
 
   while (address < size)
   {
@@ -211,8 +246,8 @@ void writeEEPROM(unsigned int size)
     byte val = 0;
     if (Serial.available() > 0) {
       val = Serial.read();
-      writeByte(address, val);
-      byte wval = waitAndCheckWrite(val);
+      writeByte(romtype, address, val);
+      byte wval = waitAndCheckWrite(romtype, val);
       Serial.write(&wval, 1);
       address++;
     }
@@ -222,7 +257,7 @@ void writeEEPROM(unsigned int size)
 //******************************************************************************************************************//
 //* Scrittura della EEPROM in modo paginato
 //******************************************************************************************************************//
-void writePagedEEPROM(unsigned int size, unsigned int pagesize)
+void writePagedEEPROM(e_rom_type romtype, unsigned long size, unsigned int pagesize)
 {
   unsigned int address = 0;  
 
@@ -237,12 +272,12 @@ void writePagedEEPROM(unsigned int size, unsigned int pagesize)
         page[idx++] = Serial.read();
       }
     }
-    byte val = writePage(address, page, PAGE_SIZE);
-    byte wval = waitAndCheckWrite(val);
+    byte val = writePage(romtype, address, page, PAGE_SIZE);
+    byte wval = waitAndCheckWrite(romtype, val);
     // feedback al programmatore dei bytes letti da EPROM
     idx = 0;
     while (idx < PAGE_SIZE) {
-      byte val = readByte(AT28C256, address + idx++);
+      byte val = readByte(romtype, address + idx++);
       Serial.write(&val, 1);
     }
     address += PAGE_SIZE;
@@ -254,12 +289,12 @@ void writePagedEEPROM(unsigned int size, unsigned int pagesize)
 //******************************************************************************************************************//
 void disableSDP()
 {
-  writeByte(0x5555, 0xaa);
-  writeByte(0x2aaa, 0x55);
-  writeByte(0x5555, 0x80);
-  writeByte(0x5555, 0xaa);
-  writeByte(0x2aaa, 0x55);
-  writeByte(0x5555, 0x20);
+  writeByte(AT28C256, 0x5555, 0xaa);
+  writeByte(AT28C256, 0x2aaa, 0x55);
+  writeByte(AT28C256, 0x5555, 0x80);
+  writeByte(AT28C256, 0x5555, 0xaa);
+  writeByte(AT28C256, 0x2aaa, 0x55);
+  writeByte(AT28C256, 0x5555, 0x20);
 }
 
 //******************************************************************************************************************//
@@ -267,7 +302,7 @@ void disableSDP()
 //******************************************************************************************************************//
 void enableSDP()
 {
-  writeByte(0x5555, 0xaa);
-  writeByte(0x2aaa, 0x55);
-  writeByte(0x5555, 0xa0);
+  writeByte(AT28C256, 0x5555, 0xaa);
+  writeByte(AT28C256, 0x2aaa, 0x55);
+  writeByte(AT28C256, 0x5555, 0xa0);
 }

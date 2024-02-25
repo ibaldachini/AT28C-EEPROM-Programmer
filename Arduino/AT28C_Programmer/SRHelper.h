@@ -5,4 +5,4 @@
   Helper funzioni Shift Register 74HC595
 */
 
-void addressWrite(unsigned int value);
+void addressWrite(unsigned long value);

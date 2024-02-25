@@ -14,38 +14,39 @@ typedef enum {
   E2764,
   E27128,
   E27256,
+  E27512,
   NONE
 } e_rom_type;
 
 //******************************************************************************************************************//
 //* Lettura di un byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte readByte(e_rom_type romtype, unsigned int address);
+byte readByte(e_rom_type romtype, unsigned long address);
 
 //******************************************************************************************************************//
 //* Scrittura di un byte all'indirizzo selezionato
 //******************************************************************************************************************//
-byte writeByte(unsigned int address, byte value);
+byte writeByte(e_rom_type romtype, unsigned long address, byte value);
 
 //******************************************************************************************************************//
 //* Attende il termine della scrittura di un byte e ne verifica la corretta valorizzazione
 //******************************************************************************************************************//
-byte waitAndCheckWrite(byte value);
+byte waitAndCheckWrite(e_rom_type romtype, byte value);
 
 //******************************************************************************************************************//
 //* Scrittura della EEPROM
 //******************************************************************************************************************//
-void writeEEPROM(unsigned int size);
+void writeEEPROM(e_rom_type romtype, unsigned long size);
 
 //******************************************************************************************************************//
 //* Scrittura della EEPROM in modo paginato
 //******************************************************************************************************************//
-void writePagedEEPROM(unsigned int size, unsigned int pagesize);
+void writePagedEEPROM(e_rom_type romtype, unsigned long size, unsigned int pagesize);
 
 //******************************************************************************************************************//
 //* Lettura della EEPROM
 //******************************************************************************************************************//
-void readEEPROM(e_rom_type romtype, unsigned int size);
+void readEEPROM(e_rom_type romtype, unsigned long size);
 
 //******************************************************************************************************************//
 //* Disabilita Software Data Protection
